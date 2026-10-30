@@ -1,0 +1,72 @@
+name: Compilar IPA (iOS)
+
+on:
+  workflow_dispatch:        # permite lanzarlo a mano desde la pestaña Actions
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write           # necesario para publicar el IPA en "Releases"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Crear el proyecto iOS
+        run: npx cap add ios
+
+      - name: Aplicar icono, pantalla de inicio y versión
+        run: node scripts/prepare-ios.js
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+
+      - name: Sincronizar la app web con iOS
+        run: npx cap sync ios
+
+      - name: Compilar sin firmar (Sideloadly lo firma después)
+        working-directory: ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Empaquetar el IPA
+        run: |
+          mkdir -p Payload
+          cp -R ios/App/build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry Pendientes.ipa Payload
+          ls -la Pendientes.ipa
+
+      - name: Guardar el IPA como archivo descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pendientes-ipa
+          path: Pendientes.ipa
+
+      - name: Publicar en Releases (enlace de descarga directo)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v1.${{ github.run_number }}" Pendientes.ipa \
+            --title "Pendientes v1.${{ github.run_number }}" \
+            --notes "IPA para iPhone, sin firmar. Ábrelo con Sideloadly, que lo firma con tu Apple ID al instalarlo."
