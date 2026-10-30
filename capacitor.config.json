@@ -1,0 +1,17 @@
+{
+  "appId": "com.pendientes.app",
+  "appName": "Pendientes",
+  "webDir": "www",
+  "backgroundColor": "#0e1014",
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0e1014",
+      "overlaysWebView": false
+    }
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0e1014"
+  }
+}
