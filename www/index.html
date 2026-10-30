@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0e1014" />
+  <title>Pendientes</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="mobile.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Barra lateral -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <span>Pendientes</span>
+      </div>
+
+      <div class="side-head">
+        <p class="side-label">Categorías</p>
+        <div class="side-icons">
+          <button id="accountBtn" class="icon-btn hidden" title="Cuenta y sincronización" aria-label="Cuenta y sincronización">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1"/></svg>
+            <i id="syncDot" class="sync-dot off"></i>
+          </button>
+          <button id="manageCats" class="icon-btn" title="Gestionar categorías" aria-label="Gestionar categorías">
+            <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+          </button>
+        </div>
+      </div>
+      <nav id="categoryNav" class="nav"></nav>
+
+      <div class="progress-card">
+        <div class="progress-head">
+          <span>Progreso</span>
+          <strong id="progressPct">0%</strong>
+        </div>
+        <div class="bar"><div id="progressBar" class="bar-fill"></div></div>
+        <p id="progressText" class="progress-text"></p>
+      </div>
+    </aside>
+
+    <!-- Contenido principal -->
+    <main class="main">
+      <header class="header">
+        <div>
+          <h1 id="viewTitle">Todas</h1>
+          <p id="viewSub" class="sub"></p>
+        </div>
+        <div class="header-actions">
+          <div class="search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input id="searchInput" type="text" placeholder="Buscar..." autocomplete="off" />
+          </div>
+          <button id="addBtn" class="btn-primary" aria-label="Nueva tarea">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Nueva tarea
+          </button>
+        </div>
+      </header>
+
+      <div class="tabs" id="statusTabs">
+        <button class="tab active" data-status="all">Todas</button>
+        <button class="tab" data-status="pending">Pendientes</button>
+        <button class="tab" data-status="done">Completadas</button>
+      </div>
+
+      <section id="grid" class="grid"></section>
+
+      <div id="empty" class="empty hidden">
+        <div class="empty-icon">✦</div>
+        <h3>Nada por aquí</h3>
+        <p>Toca el botón <strong>+</strong> para crear una tarea nueva.</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal crear / editar -->
+  <div id="modal" class="backdrop hidden">
+    <form id="taskForm" class="modal" autocomplete="off">
+      <h2 id="modalTitle">Nueva tarea</h2>
+
+      <label class="field">
+        <span>Título</span>
+        <input id="fTitle" type="text" maxlength="120" placeholder="¿Qué necesitas hacer?" required />
+      </label>
+
+      <label class="field">
+        <span>Descripción</span>
+        <textarea id="fDesc" rows="4" placeholder="Detalles, notas, enlaces..."></textarea>
+      </label>
+
+      <div class="field">
+        <span>Categoría</span>
+        <div id="fCats" class="chips"></div>
+      </div>
+
+      <div class="field">
+        <span>Repetir</span>
+        <div id="fRepeat" class="chips">
+          <button type="button" class="chip active" data-rep="none">No</button>
+          <button type="button" class="chip" data-rep="daily">Cada día</button>
+          <button type="button" class="chip" data-rep="weekly">Días de la semana</button>
+          <button type="button" class="chip" data-rep="monthly">Cada mes</button>
+        </div>
+        <div id="fDays" class="chips days hidden">
+          <button type="button" class="chip" data-day="1" title="Lunes">L</button>
+          <button type="button" class="chip" data-day="2" title="Martes">M</button>
+          <button type="button" class="chip" data-day="3" title="Miércoles">X</button>
+          <button type="button" class="chip" data-day="4" title="Jueves">J</button>
+          <button type="button" class="chip" data-day="5" title="Viernes">V</button>
+          <button type="button" class="chip" data-day="6" title="Sábado">S</button>
+          <button type="button" class="chip" data-day="0" title="Domingo">D</button>
+        </div>
+        <label id="fMonthRow" class="field inline hidden">
+          <span>Día del mes</span>
+          <input id="fMonthDay" type="number" min="1" max="31" />
+        </label>
+      </div>
+
+      <label id="fDueWrap" class="field">
+        <span>Fecha límite <em>(opcional)</em></span>
+        <input id="fDue" type="date" />
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" id="cancelBtn" class="btn-ghost">Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal gestionar categorías -->
+  <div id="catModal" class="backdrop hidden">
+    <div class="modal">
+      <h2>Categorías</h2>
+      <p class="hint">Cambia el color, renombra o elimina. Si borras una categoría, sus tareas pasan a otra.</p>
+      <div id="catList" class="cat-list"></div>
+      <button type="button" id="addCatBtn" class="btn-ghost add-cat">+ Añadir categoría</button>
+      <div class="modal-actions">
+        <button type="button" id="catDoneBtn" class="btn-primary">Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal cuenta -->
+  <div id="accountModal" class="backdrop hidden">
+    <div class="modal">
+      <h2 id="accTitle">Iniciar sesión</h2>
+
+      <form id="authForm" autocomplete="on">
+        <p class="hint">Entra con tu correo para tener las mismas tareas en todos tus dispositivos.</p>
+        <div class="tabs auth-tabs" id="authTabs">
+          <button type="button" class="tab active" data-mode="in">Entrar</button>
+          <button type="button" class="tab" data-mode="up">Crear cuenta</button>
+        </div>
+        <label class="field">
+          <span>Correo</span>
+          <input id="authEmail" type="email" autocomplete="email" placeholder="tu@correo.com" required />
+        </label>
+        <label class="field">
+          <span>Contraseña</span>
+          <input id="authPass" type="password" autocomplete="current-password" placeholder="Mínimo 6 caracteres" minlength="6" required />
+        </label>
+        <p id="authMsg" class="auth-msg hidden"></p>
+        <p class="hint small">Las tareas que ya tienes en este dispositivo se subirán a tu cuenta.</p>
+        <div class="modal-actions">
+          <button type="button" id="authCancel" class="btn-ghost">Cerrar</button>
+          <button type="submit" id="authSubmit" class="btn-primary">Entrar</button>
+        </div>
+      </form>
+
+      <div id="accountView" class="hidden">
+        <div class="acc-card">
+          <span id="accEmail" class="acc-email"></span>
+          <span id="accStatus" class="acc-status"></span>
+        </div>
+        <p id="logoutWarn" class="auth-msg hidden"></p>
+        <div class="modal-actions">
+          <button type="button" id="accClose" class="btn-ghost">Cerrar</button>
+          <button type="button" id="accSync" class="btn-ghost">Sincronizar ahora</button>
+          <button type="button" id="accLogout" class="btn-primary btn-danger">Cerrar sesión</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aviso inferior (deshacer) -->
+  <div id="toast" class="toast hidden">
+    <span id="toastMsg"></span>
+    <button id="toastBtn">Deshacer</button>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="sync.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

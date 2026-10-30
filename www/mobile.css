@@ -1,0 +1,130 @@
+/* Adaptación a pantallas táctiles / celulares */
+
+html, body { overscroll-behavior: none; }
+* { -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; }
+body { -webkit-user-select: none; user-select: none; }
+input, textarea { -webkit-user-select: text; user-select: text; }
+
+/* Safari / iOS necesita el prefijo para el desenfoque del fondo */
+.backdrop { -webkit-backdrop-filter: blur(6px); }
+
+/* Sin cursor no hay "hover": las acciones de las tarjetas deben verse siempre */
+@media (hover: none) {
+  .card-actions { opacity: 1; }
+  .sub-del { opacity: .7; }
+  .card:hover { transform: none; }
+}
+
+/* Selector de color táctil (en la gestión de categorías) */
+.cat-row { flex-wrap: wrap; }
+.cat-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; margin: 0 6px 0 4px; }
+.cat-swatches { display: flex; flex-wrap: wrap; gap: 12px; flex-basis: 100%; padding: 2px 0 12px 28px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.sw {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--sw);
+  border: 2px solid transparent; box-shadow: 0 0 0 2px transparent;
+  transition: transform .15s, box-shadow .15s;
+}
+.sw.active { border-color: #0e1014; box-shadow: 0 0 0 2px #e7e9ee; transform: scale(1.08); }
+.cat-del { width: 40px; height: 40px; }
+
+@media (max-width: 820px) {
+  html, body { height: 100%; }
+  .app { flex-direction: column; height: 100vh; height: 100dvh; }
+
+  /* Barra superior: marca + progreso + editar categorías, y debajo las categorías como chips */
+  .sidebar {
+    width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px;
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px;
+    border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .brand { order: 1; flex: 1; padding: 0; font-size: 17px; }
+  .progress-card { order: 2; margin: 0; width: 118px; padding: 8px 12px; border-radius: 12px; }
+  .progress-head { margin-bottom: 6px; font-size: 12px; }
+  .progress-text { display: none; }
+  .side-head { order: 3; padding: 0; }
+  .side-label { display: none; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); color: var(--muted); }
+  .icon-btn svg { width: 17px; height: 17px; }
+  .nav {
+    order: 4; width: 100%; flex-direction: row; gap: 8px; overflow-x: auto; padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-item {
+    flex-shrink: 0; padding: 9px 14px; border-radius: 99px; gap: 8px;
+    border: 1px solid var(--border); background: var(--card); white-space: nowrap;
+  }
+  .nav-item.active { border-color: rgba(139, 124, 246, 0.5); background: var(--accent-soft); }
+  .nav-item .count { font-size: 11px; }
+
+  /* Contenido */
+  .main { padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 110px); }
+  .header { flex-direction: column; align-items: stretch; gap: 16px; margin-bottom: 18px; }
+  h1 { font-size: 26px; }
+  .header-actions { width: 100%; }
+  .search { flex: 1; height: 46px; }
+  .search input { width: 100%; font-size: 16px; }
+  .tabs { display: flex; width: 100%; margin-bottom: 20px; }
+  .tab { flex: 1; padding: 11px 8px; font-size: 14px; text-align: center; }
+  .grid { grid-template-columns: 1fr; gap: 14px; }
+
+  .card { padding: 18px; }
+  .check { width: 28px; height: 28px; }
+  .card-actions button { width: 38px; height: 38px; }
+  .card-actions button svg { width: 17px; height: 17px; }
+  .desc { margin-left: 40px; }
+  .card-foot { margin-left: 40px; }
+  .sub-progress { margin-left: 40px; }
+  .subs { margin-left: 40px; }
+  .sub { padding: 8px 0; gap: 12px; }
+  .sub-check { width: 22px; height: 22px; }
+  .sub-check svg { width: 13px; height: 13px; }
+  .sub-del { width: 32px; height: 32px; }
+  .sub-del svg { width: 14px; height: 14px; }
+  .sub-text { font-size: 14.5px; }
+  .sub-toggle { padding: 8px 10px; font-size: 13px; }
+  .sub-input { font-size: 16px; padding: 11px 14px; }
+
+  /* "Nueva tarea" pasa a ser un botón flotante */
+  #addBtn {
+    position: fixed; z-index: 5; right: 20px; bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+    width: 60px; height: 60px; padding: 0; border-radius: 20px; font-size: 0; gap: 0; justify-content: center;
+    box-shadow: 0 14px 30px -8px rgba(139, 124, 246, 0.75);
+  }
+  #addBtn svg { width: 26px; height: 26px; }
+
+  /* Los paneles se abren desde abajo */
+  .backdrop { place-items: end center; }
+  .modal {
+    width: 100%; max-height: 92vh; max-height: 92dvh; overflow-y: auto;
+    border-radius: 24px 24px 0 0; padding: 26px 20px calc(env(safe-area-inset-bottom, 0px) + 22px);
+    animation: sheet .3s cubic-bezier(.2, .8, .2, 1);
+  }
+  .field input[type="text"], .field input[type="date"], .field textarea, .cat-name { font-size: 16px; }
+  .chip { padding: 10px 16px; font-size: 14px; }
+  .btn-primary, .btn-ghost { height: 48px; }
+  .modal-actions { gap: 10px; }
+  .modal-actions .btn-primary { flex: 1; justify-content: center; }
+  .cat-list { max-height: 48vh; }
+
+  .toast { bottom: calc(env(safe-area-inset-bottom, 0px) + 100px); width: calc(100% - 32px); justify-content: space-between; }
+}
+
+@keyframes sheet { from { opacity: 0; transform: translateY(40px); } }
+
+/* --- cuenta (móvil) --- */
+.side-icons { gap: 8px; }
+.sync-dot { right: 4px; top: 4px; width: 10px; height: 10px; border-color: var(--card); }
+#accountView .modal-actions { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 820px) {
+  .auth-tabs { width: 100%; }
+  #authForm .tab { flex: 1; }
+  #accountView .modal-actions .btn-primary { flex: 1 1 100%; order: -1; }
+  #accountView .modal-actions .btn-ghost { flex: 1; justify-content: center; }
+  .toast { font-size: 13px; }
+}
+@media (max-width: 380px) {
+  .progress-card { width: 94px; }
+  .brand { font-size: 15px; }
+}
