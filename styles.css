@@ -288,7 +288,7 @@ kbd { font-family: inherit; font-size: 12px; padding: 2px 7px; border-radius: 6p
 }
 .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 .chip:hover { color: var(--text); border-color: var(--border-strong); }
-.chip.active { color: var(--text); border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
+.chip.active { color: var(--text); border-color: var(--c); background: var(--hover-strong); background: color-mix(in srgb, var(--c) 14%, transparent); }
 
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 

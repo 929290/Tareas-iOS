@@ -41,7 +41,7 @@
     return [{
       id: 'seed-welcome',
       title: 'Bienvenido 👋',
-      desc: 'Crea tu primera tarea con el botón "Nueva tarea". Pasa el cursor sobre una tarjeta para editarla o eliminarla, y haz clic en el círculo para completarla.',
+      desc: 'Crea tu primera tarea con el botón +. Usa el lápiz y la papelera de cada tarjeta para editarla o eliminarla, y toca el círculo para completarla.',
       category: 'personal',
       due: '',
       done: false,
@@ -816,10 +816,13 @@
     catList.innerHTML = categories.map(c => {
       const n = live().filter(t => t.category === c.id).length;
       return `<div class="cat-row" data-id="${esc(c.id)}">
-        <input type="color" class="cat-color" value="${safeColor(c.color)}" aria-label="Color" />
+        <span class="cat-dot" style="background:${safeColor(c.color)}"></span>
         <input type="text" class="cat-name" value="${esc(c.name)}" maxlength="24" aria-label="Nombre" />
         <span class="cat-n" title="Tareas en esta categoría">${n}</span>
         <button type="button" class="cat-del" data-act="del" title="Eliminar" ${categories.length === 1 ? 'disabled' : ''}>${ICON_TRASH}</button>
+        <div class="cat-swatches">${PALETTE.map(col =>
+          `<button type="button" class="sw ${col === c.color ? 'active' : ''}" data-color="${col}" style="--sw:${col}" aria-label="Color ${col}"></button>`
+        ).join('')}</div>
       </div>`;
     }).join('');
   }
@@ -851,6 +854,15 @@
   });
 
   catList.addEventListener('click', e => {
+    const sw = e.target.closest('.sw');
+    if (sw) {
+      const cat = categories.find(c => c.id === sw.closest('.cat-row').dataset.id);
+      cat.color = sw.dataset.color;
+      saveCats();
+      renderCatList();
+      render();
+      return;
+    }
     const btn = e.target.closest('[data-act="del"]');
     if (!btn || categories.length < 2) return;
     const id = btn.closest('.cat-row').dataset.id;
@@ -1121,7 +1133,7 @@
   // Gráfica de barras: una barra por día, con aviso al pasar el ratón
   function renderChart(days, counts) {
     const box = $('#statsChart');
-    const W = Math.max(320, box.clientWidth || 640);
+    const W = Math.max(260, box.clientWidth || 640);
     const H = 190;
     const m = { l: 28, r: 4, t: 14, b: 24 };
     const pw = W - m.l - m.r, ph = H - m.t - m.b;
@@ -1163,7 +1175,8 @@
     document.querySelectorAll('#statsChart .bar').forEach(b => b.classList.remove('dim'));
   }
 
-  $('#statsChart').addEventListener('mousemove', e => {
+  // Con el dedo: tocar una barra (o deslizar sobre la gráfica) muestra el aviso
+  function showChartTip(e) {
     const hit = e.target.closest && e.target.closest('.hit');
     if (!hit || !chartData) { hideChartTip(); return; }
     const i = Number(hit.dataset.i);
@@ -1174,8 +1187,11 @@
     tip.style.top = (y(vals[i]) - 8) + 'px';
     tip.classList.remove('hidden');
     document.querySelectorAll('#statsChart .bar').forEach(b => b.classList.toggle('dim', b.dataset.i !== String(i)));
-  });
-  $('#statsChart').addEventListener('mouseleave', hideChartTip);
+  }
+  $('#statsChart').addEventListener('pointerdown', showChartTip);
+  $('#statsChart').addEventListener('pointermove', showChartTip);
+  $('#statsChart').addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideChartTip(); });
+  statsModal.addEventListener('pointerdown', e => { if (!e.target.closest('#statsChart')) hideChartTip(); });
 
   function renderCatBreakdown(entries) {
     const map = new Map();
@@ -1221,6 +1237,7 @@
   }
 
   $('#statsBtn').addEventListener('click', openStats);
+  $('#statsBtnM').addEventListener('click', openStats);
   $('#statsDone').addEventListener('click', () => statsModal.classList.add('hidden'));
   statsModal.addEventListener('mousedown', e => { if (e.target === statsModal) statsModal.classList.add('hidden'); });
   $('#statsTabs').addEventListener('click', e => {
@@ -1246,7 +1263,9 @@
     lb.title = list ? 'Ver como tarjetas' : 'Ver como lista';
   }
 
-  $('#settingsBtn').addEventListener('click', () => { renderPrefs(); settingsModal.classList.remove('hidden'); });
+  function openSettings() { renderPrefs(); settingsModal.classList.remove('hidden'); }
+  $('#settingsBtn').addEventListener('click', openSettings);
+  $('#settingsBtnM').addEventListener('click', openSettings);
   $('#settingsDone').addEventListener('click', () => settingsModal.classList.add('hidden'));
   settingsModal.addEventListener('mousedown', e => { if (e.target === settingsModal) settingsModal.classList.add('hidden'); });
   $('#themeChips').addEventListener('click', e => {
@@ -1268,17 +1287,43 @@
   const isDay = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const str = (s, max) => (typeof s === 'string' ? s.slice(0, max) : '');
 
-  function exportBackup() {
+  // Llama a un plugin nativo de Capacitor (si la app corre en el teléfono)
+  function native(plugin, method, opts) {
+    const C = window.Capacitor;
+    const p = C && C.Plugins && C.Plugins[plugin];
+    if (p && typeof p[method] === 'function') return p[method](opts);
+    if (C && typeof C.nativePromise === 'function' && C.isPluginAvailable && C.isPluginAvailable(plugin)) return C.nativePromise(plugin, method, opts);
+    return Promise.reject(new Error('no-native'));
+  }
+
+  async function exportBackup() {
     const data = { app: 'pendientes', version: 1, exportedAt: new Date().toISOString(), categories, tasks };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const json = JSON.stringify(data, null, 2);
+    const name = `pendientes-copia-${todayStr()}.json`;
+    const done = () => showToast(`Copia lista · ${plural(live().length, 'tarea', 'tareas')}`);
+
+    // En el teléfono: se guarda el archivo y se abre el menú Compartir (Guardar en Archivos, WhatsApp, correo...)
+    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+      try {
+        const r = await native('Filesystem', 'writeFile', { path: name, data: json, directory: 'CACHE', encoding: 'utf8' });
+        await native('Share', 'share', { title: 'Copia de Pendientes', url: r.uri, dialogTitle: 'Guardar la copia' });
+        done();
+      } catch (err) {
+        const msg = String((err && err.message) || err);
+        if (!/cancel/i.test(msg)) showToast('No se pudo exportar la copia.');
+      }
+      return;
+    }
+
+    const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `pendientes-copia-${todayStr()}.json`;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    showToast(`Copia exportada · ${plural(live().length, 'tarea', 'tareas')}`);
+    done();
   }
 
   // Revisa cada tarea del archivo: solo entra lo que tiene la forma correcta
@@ -1395,6 +1440,21 @@
       });
     });
   }
+
+  // ---------- Botón atrás de Android ----------
+  try {
+    const AppPlugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (AppPlugin) {
+      AppPlugin.addListener('backButton', () => {
+        if (!statsModal.classList.contains('hidden')) statsModal.classList.add('hidden');
+        else if (!settingsModal.classList.contains('hidden')) settingsModal.classList.add('hidden');
+        else if (!accModal.classList.contains('hidden')) closeAccount();
+        else if (!catModal.classList.contains('hidden')) closeCatModal();
+        else if (!modal.classList.contains('hidden')) closeModal();
+        else AppPlugin.exitApp();
+      });
+    }
+  } catch {}
 
   // ---------- Inicio ----------
   renderPrefs();
