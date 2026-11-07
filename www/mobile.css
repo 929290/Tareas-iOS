@@ -25,7 +25,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
   border: 2px solid transparent; box-shadow: 0 0 0 2px transparent;
   transition: transform .15s, box-shadow .15s;
 }
-.sw.active { border-color: #0e1014; box-shadow: 0 0 0 2px #e7e9ee; transform: scale(1.08); }
+.sw.active { border-color: var(--bg); box-shadow: 0 0 0 2px var(--text); transform: scale(1.08); }
 .cat-del { width: 40px; height: 40px; }
 
 @media (max-width: 820px) {
@@ -124,6 +124,26 @@ input, textarea { -webkit-user-select: text; user-select: text; }
   #accountView .modal-actions .btn-ghost { flex: 1; justify-content: center; }
   .toast { font-size: 13px; }
 }
+/* --- versión 1.2: resumen, ajustes, vista en lista --- */
+.m-only { display: none; }
+.chart { touch-action: pan-y; }
+@media (max-width: 820px) {
+  /* Resumen y Ajustes pasan a la cabecera como iconos; el botón de vista está en Ajustes */
+  .side-foot, #layoutBtn { display: none; }
+  .header-actions { gap: 10px; }
+  .m-only { display: grid; flex-shrink: 0; width: 46px; height: 46px; }
+
+  .modal.wide { width: 100%; max-height: 92vh; max-height: 92dvh; }
+  .modal-head { flex-wrap: wrap; gap: 10px; }
+  .stat-tiles { grid-template-columns: repeat(2, 1fr); }
+  .row-btns .btn-ghost { flex: 1 1 140px; justify-content: center; }
+  .hist-row { padding: 9px 2px; font-size: 14.5px; }
+
+  /* Lista compacta con el dedo: las acciones siguen visibles */
+  :root[data-layout="list"] .card { padding: 12px 14px; }
+  :root[data-layout="list"] .card-foot { margin-left: 40px; }
+}
+
 @media (max-width: 380px) {
   .progress-card { width: 94px; }
   .brand { font-size: 15px; }

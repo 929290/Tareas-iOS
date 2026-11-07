@@ -64,12 +64,19 @@
     if (window.Sync) Sync.schedule();
   }
 
-  let tasks = load();
-  // Tareas guardadas con versiones anteriores no tienen subtareas: se les añade una lista vacía
-  tasks.forEach(t => {
+  // Completa los campos que no tenían las tareas guardadas con versiones anteriores.
+  // completions: momentos (ms) en que se completó la tarea → historial y resumen.
+  // archived: tarea eliminada que se conserva oculta solo para no perder su historial.
+  function normalize(t) {
     if (!Array.isArray(t.subtasks)) t.subtasks = [];
     if (t.repeat === undefined) { t.repeat = null; t.doneOn = ''; t.reopenOn = ''; }
-  });
+    if (!Array.isArray(t.completions)) t.completions = t.done ? [t.updatedAt || t.createdAt || Date.now()] : [];
+    return t;
+  }
+
+  let tasks = load();
+  tasks.forEach(normalize);
+  const live = () => tasks.filter(t => !t.archived); // las que se ven en la app
   const expanded = new Set(); // tarjetas con las subtareas desplegadas (solo mientras la app está abierta)
   let view = { category: 'all', status: 'all', query: '' };
   let editingId = null;
@@ -79,7 +86,8 @@
   let repMonthDay = 1;    // día del mes
   let reorderTimer = null;
   let toastTimer = null;
-  let lastDeleted = null;
+  let toastKind = null;   // qué está mostrando el aviso inferior ('delete' = tareas borradas)
+  let undoBatch = [];     // tareas borradas mientras el aviso sigue visible (se deshacen todas juntas)
 
   // ---------- Sincronización: seguimiento de cambios ----------
   const SYNC_STATE_KEY = 'pendientes.sync.v1';
@@ -181,9 +189,7 @@
         delete syncState.tombs[r.id];
         delete syncState.dirty[r.id];
       } else {
-        const t = { ...r.data, id: r.id, updatedAt: r.updated_at };
-        if (!Array.isArray(t.subtasks)) t.subtasks = [];
-        if (t.repeat === undefined) { t.repeat = null; t.doneOn = ''; t.reopenOn = ''; }
+        const t = normalize({ ...r.data, id: r.id, updatedAt: r.updated_at });
         if (local) tasks[i] = t; else tasks.push(t);
         snap.set(t.id, strip(t));
         delete syncState.dirty[t.id];
@@ -255,6 +261,8 @@
   const esc = s => String(s).replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[ch]));
+  // Los colores van dentro de atributos "style": solo se aceptan colores #hex
+  const safeColor = c => (/^#[0-9a-f]{3,8}$/i.test(String(c)) ? c : '#8b90a0');
 
   function parseDate(str) {
     const [y, m, d] = str.split('-').map(Number);
@@ -304,6 +312,9 @@
 
   // Marca una tarea como hecha / pendiente y, si es recurrente, calcula cuándo vuelve
   function applyDone(t, done) {
+    // Historial: se anota al completarla; si se desmarca, se quita la última anotación
+    if (done && !t.done) t.completions.push(Date.now());
+    if (!done && t.done) t.completions.pop();
     t.done = done;
     if (t.repeat && done) {
       t.doneOn = todayStr();
@@ -319,7 +330,7 @@
     const today = todayStr();
     let changed = false;
     tasks.forEach(t => {
-      if (t.repeat && t.done && t.reopenOn && t.reopenOn <= today) {
+      if (!t.archived && t.repeat && t.done && t.reopenOn && t.reopenOn <= today) {
         t.done = false;
         t.doneOn = '';
         t.reopenOn = '';
@@ -392,7 +403,7 @@
   // ---------- Render ----------
   function visibleTasks() {
     const q = view.query.trim().toLowerCase();
-    return tasks
+    return live()
       .filter(t => view.category === 'all' || t.category === view.category)
       .filter(t => view.status === 'all' || (view.status === 'pending' ? !t.done : t.done))
       .filter(t => !q || (t.title + ' ' + t.desc + ' ' + t.subtasks.map(s => s.text).join(' ')).toLowerCase().includes(q))
@@ -402,18 +413,19 @@
   function renderNav() {
     const items = [{ id: 'all', name: 'Todas', color: '#8b90a0' }, ...categories];
     nav.innerHTML = items.map(c => {
-      const n = tasks.filter(t => !t.done && (c.id === 'all' || t.category === c.id)).length;
-      return `<button class="nav-item ${view.category === c.id ? 'active' : ''}" data-cat="${c.id}">
-        <span class="dot" style="background:${c.color}"></span>
-        <span>${c.name}</span>
+      const n = live().filter(t => !t.done && (c.id === 'all' || t.category === c.id)).length;
+      return `<button class="nav-item ${view.category === c.id ? 'active' : ''}" data-cat="${esc(c.id)}">
+        <span class="dot" style="background:${safeColor(c.color)}"></span>
+        <span>${esc(c.name)}</span>
         <span class="count">${n}</span>
       </button>`;
     }).join('');
   }
 
   function renderProgress() {
-    const total = tasks.length;
-    const done = tasks.filter(t => t.done).length;
+    const shown = live();
+    const total = shown.length;
+    const done = shown.filter(t => t.done).length;
     const pct = total ? Math.round((done / total) * 100) : 0;
     $('#progressPct').textContent = pct + '%';
     $('#progressBar').style.width = pct + '%';
@@ -425,7 +437,7 @@
   function renderHeader() {
     const cat = view.category === 'all' ? null : catById(view.category);
     $('#viewTitle').textContent = cat ? cat.name : 'Todas las tareas';
-    const pending = tasks.filter(t => !t.done && (!cat || t.category === cat.id)).length;
+    const pending = live().filter(t => !t.done && (!cat || t.category === cat.id)).length;
     const today = new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
     $('#viewSub').innerHTML = `${today} · <span>${pending} pendiente${pending === 1 ? '' : 's'}</span>`;
   }
@@ -450,7 +462,7 @@
       }
     }
     const open = expanded.has(t.id);
-    return `<article class="card ${t.done ? 'done' : ''} ${open ? 'expanded' : ''} ${animate ? 'enter' : ''}" data-id="${t.id}" style="--c:${cat.color};--d:${Math.min(i, 12) * 35}ms">
+    return `<article class="card ${t.done ? 'done' : ''} ${open ? 'expanded' : ''} ${animate ? 'enter' : ''}" data-id="${esc(t.id)}" style="--c:${safeColor(cat.color)};--d:${Math.min(i, 12) * 35}ms">
       <div class="card-top">
         <button class="check" data-act="toggle" aria-label="Marcar como completada">${ICON_CHECK}</button>
         <h3 class="title"><span>${esc(t.title)}</span></h3>
@@ -462,7 +474,7 @@
       ${t.desc ? `<p class="desc">${esc(t.desc)}</p>` : ''}
       <div class="sub-progress ${t.subtasks.length ? '' : 'hidden'}"><i style="width:${subsPct(t)}%"></i></div>
       <div class="card-foot">
-        <span class="tag"><i></i>${cat.name}</span>
+        <span class="tag"><i></i>${esc(cat.name)}</span>
         ${due}
         ${rep}
         <button class="sub-toggle" data-act="subs">${subLabel(t, open)}</button>
@@ -483,7 +495,7 @@
   // ---------- Modal ----------
   function renderChips() {
     $('#fCats').innerHTML = categories.map(c =>
-      `<button type="button" class="chip ${c.id === selectedCat ? 'active' : ''}" data-cat="${c.id}" style="--c:${c.color}"><i></i>${c.name}</button>`
+      `<button type="button" class="chip ${c.id === selectedCat ? 'active' : ''}" data-cat="${esc(c.id)}" style="--c:${safeColor(c.color)}"><i></i>${esc(c.name)}</button>`
     ).join('');
   }
 
@@ -521,16 +533,43 @@
   }
 
   // ---------- Toast ----------
-  function showToast(msg, onUndo, label = 'Deshacer') {
+  function showToast(msg, onUndo, label = 'Deshacer', kind = null) {
     $('#toastMsg').textContent = msg;
-    $('#toastBtn').textContent = label;
-    const toast = $('#toast');
-    toast.classList.remove('hidden');
-    $('#toastBtn').onclick = () => { onUndo(); hideToast(); };
+    const btn = $('#toastBtn');
+    btn.textContent = label;
+    btn.classList.toggle('hidden', !onUndo);
+    btn.onclick = onUndo ? () => { onUndo(); hideToast(); } : null;
+    toastKind = kind;
+    $('#toast').classList.remove('hidden');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(hideToast, 5000);
   }
-  function hideToast() { $('#toast').classList.add('hidden'); }
+  function hideToast() {
+    $('#toast').classList.add('hidden');
+    toastKind = null;
+    undoBatch = [];
+  }
+
+  // Borrar una tarea. Si alguna vez se completó, se guarda oculta para que su historial siga en el resumen.
+  function deleteTask(task) {
+    if (task.completions.length) task.archived = true;
+    else tasks = tasks.filter(t => t.id !== task.id);
+    expanded.delete(task.id);
+    if (toastKind !== 'delete') undoBatch = [];
+    undoBatch.push(task);
+    save();
+    render();
+    const n = undoBatch.length;
+    showToast(n === 1 ? 'Tarea eliminada' : `${n} tareas eliminadas`, () => {
+      undoBatch.forEach(t => {
+        const cur = tasks.find(x => x.id === t.id);
+        if (cur) delete cur.archived;               // estaba oculta: vuelve a verse
+        else { delete t.archived; tasks.push(t); }  // se había quitado: se recupera
+      });
+      save();
+      render(true);
+    }, 'Deshacer', 'delete');
+  }
 
   // ---------- Eventos ----------
   $('#addBtn').addEventListener('click', () => openModal());
@@ -587,7 +626,7 @@
       task = tasks.find(t => t.id === editingId);
       Object.assign(task, data);
     } else {
-      task = { id: uid(), done: false, createdAt: Date.now(), subtasks: [], doneOn: '', reopenOn: '', ...data };
+      task = { id: uid(), done: false, createdAt: Date.now(), subtasks: [], completions: [], doneOn: '', reopenOn: '', ...data };
       tasks.push(task);
     }
     // Si cambió la regla de una tarea ya completada, se recalcula cuándo vuelve
@@ -669,17 +708,7 @@
 
     if (btn.dataset.act === 'delete') {
       card.classList.add('removing');
-      setTimeout(() => {
-        lastDeleted = task;
-        tasks = tasks.filter(t => t.id !== id);
-        save();
-        render();
-        showToast('Tarea eliminada', () => {
-          tasks.push(lastDeleted);
-          save();
-          render(true);
-        });
-      }, 220);
+      setTimeout(() => deleteTask(task), 220);
     }
   });
 
@@ -709,9 +738,9 @@
 
   function renderCatList() {
     catList.innerHTML = categories.map(c => {
-      const n = tasks.filter(t => t.category === c.id).length;
-      return `<div class="cat-row" data-id="${c.id}">
-        <span class="cat-dot" style="background:${c.color}"></span>
+      const n = live().filter(t => t.category === c.id).length;
+      return `<div class="cat-row" data-id="${esc(c.id)}">
+        <span class="cat-dot" style="background:${safeColor(c.color)}"></span>
         <input type="text" class="cat-name" value="${esc(c.name)}" maxlength="24" aria-label="Nombre" />
         <span class="cat-n" title="Tareas en esta categoría">${n}</span>
         <button type="button" class="cat-del" data-act="del" title="Eliminar" ${categories.length === 1 ? 'disabled' : ''}>${ICON_TRASH}</button>
@@ -763,14 +792,12 @@
     const id = btn.closest('.cat-row').dataset.id;
     const gone = catById(id);
     const fallback = categories.find(c => c.id !== id);
-    const snapshot = {
-      cats: categories.map(c => ({ ...c })),
-      tasks: tasks.map(t => ({ ...t })),
-      category: view.category
-    };
-    const moved = tasks.filter(t => t.category === id).length;
+    const prevCats = categories.map(c => ({ ...c }));
+    const prevView = view.category;
+    const movedIds = new Set(tasks.filter(t => t.category === id).map(t => t.id));
+    const moved = live().filter(t => movedIds.has(t.id)).length;
 
-    tasks.forEach(t => { if (t.category === id) t.category = fallback.id; });
+    tasks.forEach(t => { if (movedIds.has(t.id)) t.category = fallback.id; });
     categories = categories.filter(c => c.id !== id);
     if (view.category === id) view.category = 'all';
     save();
@@ -781,9 +808,10 @@
     showToast(
       moved ? `"${gone.name}" eliminada · ${moved} tarea${moved === 1 ? '' : 's'} a ${fallback.name}` : `"${gone.name}" eliminada`,
       () => {
-        categories = snapshot.cats;
-        tasks = snapshot.tasks;
-        view.category = snapshot.category;
+        // Solo se deshace lo que hizo el borrado: el resto de cambios hechos mientras tanto se conservan
+        categories = prevCats;
+        tasks.forEach(t => { if (movedIds.has(t.id) && t.category === fallback.id) t.category = id; });
+        view.category = prevView;
         save();
         saveCats();
         renderCatList();
@@ -809,6 +837,8 @@
   });
 
   document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#statsModal').classList.contains('hidden')) { $('#statsModal').classList.add('hidden'); return; }
+    if (e.key === 'Escape' && !$('#settingsModal').classList.contains('hidden')) { $('#settingsModal').classList.add('hidden'); return; }
     if (e.key === 'Escape' && !$('#accountModal').classList.contains('hidden')) { closeAccount(); return; }
     if (e.key === 'Escape' && !catModal.classList.contains('hidden')) { closeCatModal(); return; }
     if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
@@ -962,12 +992,387 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkRecurring(); });
   scheduleMidnightCheck();
 
+  // ---------- Resumen e historial ----------
+  const statsModal = $('#statsModal');
+  let statsRange = 7;
+  let chartData = null; // lo que necesita el tooltip de la gráfica
+  const dayKey = ts => ymd(new Date(ts));
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+  function dayLabel(key) {
+    const today = todayStr();
+    if (key === today) return 'Hoy';
+    if (key === addDays(today, -1)) return 'Ayer';
+    return cap(parseDate(key).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' }));
+  }
+
+  // Todas las veces que se completó algo (incluidas tareas recurrentes y tareas ya eliminadas)
+  function completionLog() {
+    const out = [];
+    tasks.forEach(t => t.completions.forEach(ts => out.push({ ts, t })));
+    return out.sort((a, b) => b.ts - a.ts);
+  }
+
+  function streaks(daySet) {
+    let cur = 0;
+    let d = todayStr();
+    if (!daySet.has(d)) d = addDays(d, -1); // si hoy aún no completaste nada, la racha de ayer sigue viva
+    while (daySet.has(d)) { cur++; d = addDays(d, -1); }
+    let best = 0, run = 0, prev = null;
+    [...daySet].sort().forEach(x => {
+      run = prev && addDays(prev, 1) === x ? run + 1 : 1;
+      best = Math.max(best, run);
+      prev = x;
+    });
+    return { cur, best };
+  }
+
+  function renderStats() {
+    document.querySelectorAll('#statsTabs .tab').forEach(t => t.classList.toggle('active', Number(t.dataset.range) === statsRange));
+    const log = completionLog();
+    const today = todayStr();
+    const days = [];
+    for (let i = statsRange - 1; i >= 0; i--) days.push(addDays(today, -i));
+    const counts = new Map(days.map(d => [d, 0]));
+    const inRange = log.filter(e => counts.has(dayKey(e.ts)));
+    inRange.forEach(e => { const k = dayKey(e.ts); counts.set(k, counts.get(k) + 1); });
+    const { cur, best } = streaks(new Set(log.map(e => dayKey(e.ts))));
+    const avg = inRange.length / statsRange;
+
+    const streakNote = !cur ? 'Completa una tarea hoy para empezar'
+      : counts.get(today) ? '¡Hoy ya sumaste!' : 'Completa una hoy para no perderla';
+    $('#statTiles').innerHTML = [
+      ['Completadas', inRange.length, `en los últimos ${statsRange} días`],
+      ['Racha actual', plural(cur, 'día', 'días'), streakNote],
+      ['Mejor racha', plural(best, 'día', 'días'), 'días seguidos completando algo'],
+      ['Promedio', avg.toLocaleString('es', { maximumFractionDigits: 1 }), 'tareas completadas por día']
+    ].map(([k, v, s]) => `<div class="tile"><span class="tile-k">${k}</span><b>${v}</b><span class="tile-s">${s}</span></div>`).join('');
+
+    renderChart(days, counts);
+    renderCatBreakdown(inRange);
+    renderHistory(inRange, counts);
+  }
+
+  // Gráfica de barras: una barra por día, con aviso al pasar el ratón
+  function renderChart(days, counts) {
+    const box = $('#statsChart');
+    const W = Math.max(260, box.clientWidth || 640);
+    const H = 190;
+    const m = { l: 28, r: 4, t: 14, b: 24 };
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const base = m.t + ph;
+    const vals = days.map(d => counts.get(d));
+    const step = Math.max(1, Math.ceil(Math.max(...vals) / 3));
+    const yMax = step * 3;
+    const y = v => base - (v / yMax) * ph;
+    const band = pw / days.length;
+    const bw = Math.max(4, Math.min(34, band - 6));
+    const today = todayStr();
+    let g = '';
+    for (let i = 0; i <= 3; i++) {
+      const yy = y(i * step);
+      g += `<line class="grid-line${i === 0 ? ' base' : ''}" x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}"/>`;
+      g += `<text class="ax" x="${m.l - 8}" y="${yy + 4}" text-anchor="end">${i * step}</text>`;
+    }
+    days.forEach((d, i) => {
+      const cx = m.l + band * i + band / 2;
+      const v = vals[i];
+      if (v) {
+        const top = y(v), x = cx - bw / 2, r = Math.min(4, bw / 2, base - top);
+        g += `<path class="bar" data-i="${i}" d="M${x},${base}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${base}Z"/>`;
+      }
+      const short = days.length <= 7;
+      if (short || (days.length - 1 - i) % 5 === 0) {
+        const lbl = d === today ? 'Hoy' : short ? DAY_SHORT[parseDate(d).getDay()] : String(parseDate(d).getDate());
+        g += `<text class="ax${d === today ? ' today' : ''}" x="${cx}" y="${H - 6}" text-anchor="middle">${lbl}</text>`;
+      }
+      g += `<rect class="hit" data-i="${i}" x="${m.l + band * i}" y="${m.t}" width="${band}" height="${ph}"/>`;
+    });
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:${W}px;height:${H}px" role="img" aria-label="Tareas completadas por día">${g}</svg><div class="chart-tip hidden"></div>`;
+    chartData = { days, vals, band, m, y };
+  }
+
+  function hideChartTip() {
+    const tip = $('#statsChart .chart-tip');
+    if (tip) tip.classList.add('hidden');
+    document.querySelectorAll('#statsChart .bar').forEach(b => b.classList.remove('dim'));
+  }
+
+  // Con el dedo: tocar una barra (o deslizar sobre la gráfica) muestra el aviso
+  function showChartTip(e) {
+    const hit = e.target.closest && e.target.closest('.hit');
+    if (!hit || !chartData) { hideChartTip(); return; }
+    const i = Number(hit.dataset.i);
+    const { days, vals, band, m, y } = chartData;
+    const tip = $('#statsChart .chart-tip');
+    tip.innerHTML = `${esc(dayLabel(days[i]))} · <b>${plural(vals[i], 'completada', 'completadas')}</b>`;
+    tip.style.left = Math.min(Math.max(m.l + band * i + band / 2, 90), $('#statsChart').clientWidth - 90) + 'px';
+    tip.style.top = (y(vals[i]) - 8) + 'px';
+    tip.classList.remove('hidden');
+    document.querySelectorAll('#statsChart .bar').forEach(b => b.classList.toggle('dim', b.dataset.i !== String(i)));
+  }
+  $('#statsChart').addEventListener('pointerdown', showChartTip);
+  $('#statsChart').addEventListener('pointermove', showChartTip);
+  $('#statsChart').addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideChartTip(); });
+  statsModal.addEventListener('pointerdown', e => { if (!e.target.closest('#statsChart')) hideChartTip(); });
+
+  function renderCatBreakdown(entries) {
+    const map = new Map();
+    entries.forEach(e => { const c = catById(e.t.category); map.set(c.id, { c, n: ((map.get(c.id) || {}).n || 0) + 1 }); });
+    const rows = [...map.values()].sort((a, b) => b.n - a.n);
+    const max = Math.max(1, ...rows.map(r => r.n));
+    $('#statsCats').innerHTML = rows.length
+      ? rows.map(r => `<div class="cat-stat" style="--c:${safeColor(r.c.color)}">
+          <span class="cs-name"><i></i>${esc(r.c.name)}</span>
+          <span class="cs-bar"><i style="width:${(r.n / max) * 100}%"></i></span>
+          <span class="cs-n">${r.n}</span>
+        </div>`).join('')
+      : '<p class="muted-note">Nada completado en este periodo.</p>';
+  }
+
+  function renderHistory(entries, counts) {
+    if (!entries.length) {
+      $('#statsHistory').innerHTML = '<p class="muted-note">Cuando completes tareas aparecerán aquí, agrupadas por día.</p>';
+      return;
+    }
+    let html = '', lastDay = null;
+    entries.slice(0, 400).forEach(({ ts, t }) => {
+      const k = dayKey(ts);
+      if (k !== lastDay) {
+        html += `<h4 class="hist-day">${esc(dayLabel(k))}<span>${plural(counts.get(k), 'completada', 'completadas')}</span></h4>`;
+        lastDay = k;
+      }
+      const c = catById(t.category);
+      const time = new Date(ts).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+      html += `<div class="hist-row" style="--c:${safeColor(c.color)}">
+        <span class="hist-time">${time}</span><i></i>
+        <span class="hist-title">${esc(t.title)}</span>
+        ${t.repeat ? `<span class="rep" title="${esc(repeatLabel(t.repeat))}">${ICON_REP}</span>` : ''}
+        ${t.archived ? '<span class="hist-tag">eliminada</span>' : ''}
+      </div>`;
+    });
+    $('#statsHistory').innerHTML = html;
+  }
+
+  function openStats() {
+    statsModal.classList.remove('hidden');
+    renderStats(); // después de mostrarlo, para medir el ancho de la gráfica
+  }
+
+  $('#statsBtn').addEventListener('click', openStats);
+  $('#statsBtnM').addEventListener('click', openStats);
+  $('#statsDone').addEventListener('click', () => statsModal.classList.add('hidden'));
+  statsModal.addEventListener('mousedown', e => { if (e.target === statsModal) statsModal.classList.add('hidden'); });
+  $('#statsTabs').addEventListener('click', e => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    statsRange = Number(tab.dataset.range);
+    renderStats();
+  });
+  window.addEventListener('resize', () => { if (!statsModal.classList.contains('hidden')) renderStats(); });
+
+  // ---------- Ajustes: tema y vista ----------
+  const settingsModal = $('#settingsModal');
+  const ICON_LIST = '<svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>';
+  const ICON_CARDS = '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>';
+
+  function renderPrefs() {
+    const p = Prefs.get();
+    document.querySelectorAll('#themeChips .chip').forEach(c => c.classList.toggle('active', c.dataset.v === p.theme));
+    document.querySelectorAll('#layoutChips .chip').forEach(c => c.classList.toggle('active', c.dataset.v === p.layout));
+    const list = p.layout === 'list';
+    const lb = $('#layoutBtn');
+    lb.innerHTML = list ? ICON_CARDS : ICON_LIST;
+    lb.title = list ? 'Ver como tarjetas' : 'Ver como lista';
+  }
+
+  function openSettings() { renderPrefs(); settingsModal.classList.remove('hidden'); }
+  $('#settingsBtn').addEventListener('click', openSettings);
+  $('#settingsBtnM').addEventListener('click', openSettings);
+  $('#settingsDone').addEventListener('click', () => settingsModal.classList.add('hidden'));
+  settingsModal.addEventListener('mousedown', e => { if (e.target === settingsModal) settingsModal.classList.add('hidden'); });
+  $('#themeChips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (chip) { Prefs.set({ theme: chip.dataset.v }); renderPrefs(); }
+  });
+  $('#layoutChips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (chip) { Prefs.set({ layout: chip.dataset.v }); renderPrefs(); }
+  });
+  $('#layoutBtn').addEventListener('click', () => {
+    Prefs.set({ layout: Prefs.get().layout === 'list' ? 'cards' : 'list' });
+    renderPrefs();
+    render(true);
+  });
+  window.addEventListener('storage', e => { if (e.key === 'pendientes.prefs.v1') renderPrefs(); });
+
+  // ---------- Copia de seguridad ----------
+  const isDay = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const str = (s, max) => (typeof s === 'string' ? s.slice(0, max) : '');
+
+  // Llama a un plugin nativo de Capacitor (si la app corre en el teléfono)
+  function native(plugin, method, opts) {
+    const C = window.Capacitor;
+    const p = C && C.Plugins && C.Plugins[plugin];
+    if (p && typeof p[method] === 'function') return p[method](opts);
+    if (C && typeof C.nativePromise === 'function' && C.isPluginAvailable && C.isPluginAvailable(plugin)) return C.nativePromise(plugin, method, opts);
+    return Promise.reject(new Error('no-native'));
+  }
+
+  async function exportBackup() {
+    const data = { app: 'pendientes', version: 1, exportedAt: new Date().toISOString(), categories, tasks };
+    const json = JSON.stringify(data, null, 2);
+    const name = `pendientes-copia-${todayStr()}.json`;
+    const done = () => showToast(`Copia lista · ${plural(live().length, 'tarea', 'tareas')}`);
+
+    // En el teléfono: se guarda el archivo y se abre el menú Compartir (Guardar en Archivos, WhatsApp, correo...)
+    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+      try {
+        const r = await native('Filesystem', 'writeFile', { path: name, data: json, directory: 'CACHE', encoding: 'utf8' });
+        await native('Share', 'share', { title: 'Copia de Pendientes', url: r.uri, dialogTitle: 'Guardar la copia' });
+        done();
+      } catch (err) {
+        const msg = String((err && err.message) || err);
+        if (!/cancel/i.test(msg)) showToast('No se pudo exportar la copia.');
+      }
+      return;
+    }
+
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    done();
+  }
+
+  // Revisa cada tarea del archivo: solo entra lo que tiene la forma correcta
+  function cleanTask(r, catIds) {
+    if (!r || typeof r !== 'object' || typeof r.id !== 'string' || !r.id || typeof r.title !== 'string' || !r.title.trim()) return null;
+    let repeat = null;
+    const rp = r.repeat;
+    if (rp && rp.type === 'daily') repeat = { type: 'daily' };
+    if (rp && rp.type === 'weekly' && Array.isArray(rp.days)) {
+      const days = [...new Set(rp.days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b);
+      if (days.length) repeat = { type: 'weekly', days };
+    }
+    if (rp && rp.type === 'monthly' && Number.isInteger(rp.day) && rp.day >= 1 && rp.day <= 31) repeat = { type: 'monthly', day: rp.day };
+    const num = v => (Number.isFinite(v) && v > 0 ? v : 0);
+    const t = {
+      id: r.id.slice(0, 60),
+      title: r.title.trim().slice(0, 120),
+      desc: str(r.desc, 5000),
+      category: catIds.includes(r.category) ? r.category : categories[0].id,
+      due: !repeat && isDay(r.due) ? r.due : '',
+      done: r.done === true,
+      createdAt: num(r.createdAt) || Date.now(),
+      subtasks: Array.isArray(r.subtasks)
+        ? r.subtasks.filter(s => s && typeof s.text === 'string').slice(0, 200)
+          .map(s => ({ id: typeof s.id === 'string' ? s.id.slice(0, 60) : uid(), text: s.text.slice(0, 120), done: s.done === true }))
+        : [],
+      repeat,
+      doneOn: repeat && isDay(r.doneOn) ? r.doneOn : '',
+      reopenOn: repeat && isDay(r.reopenOn) ? r.reopenOn : '',
+      completions: Array.isArray(r.completions) ? r.completions.filter(v => num(v)).slice(-5000) : [],
+      updatedAt: num(r.updatedAt)
+    };
+    if (r.archived === true && t.completions.length) t.archived = true;
+    return t;
+  }
+
+  function importBackup(text) {
+    let d;
+    try { d = JSON.parse(text); } catch { d = null; }
+    if (!d || !Array.isArray(d.tasks)) { showToast('Ese archivo no es una copia de Pendientes.'); return; }
+
+    const before = { cats: JSON.stringify(categories), tasks: JSON.stringify(tasks) };
+    let catsChanged = false;
+    if (Array.isArray(d.categories)) {
+      d.categories.forEach(c => {
+        if (!c || typeof c.id !== 'string' || !c.id || categories.some(x => x.id === c.id)) return;
+        categories.push({ id: c.id.slice(0, 60), name: str(c.name, 24).trim() || 'Sin nombre', color: safeColor(c.color) });
+        catsChanged = true;
+      });
+    }
+    const catIds = categories.map(c => c.id);
+    let added = 0, updated = 0;
+    d.tasks.forEach(raw => {
+      const t = cleanTask(raw, catIds);
+      if (!t) return;
+      const i = tasks.findIndex(x => x.id === t.id);
+      if (i < 0) { tasks.push(t); added++; }
+      else if (t.updatedAt > (tasks[i].updatedAt || 0)) { tasks[i] = t; updated++; }
+    });
+    if (!added && !updated && !catsChanged) { showToast('No había nada nuevo en esa copia.'); return; }
+
+    refreshRecurring();
+    if (catsChanged) saveCats();
+    save();
+    render(true);
+    const parts = [];
+    if (added) parts.push(`${plural(added, 'nueva', 'nuevas')}`);
+    if (updated) parts.push(`${plural(updated, 'actualizada', 'actualizadas')}`);
+    showToast(`Copia importada · ${parts.join(', ') || 'categorías añadidas'}`, () => {
+      categories = JSON.parse(before.cats);
+      tasks = JSON.parse(before.tasks);
+      if (catsChanged) saveCats();
+      save();
+      render(true);
+    });
+  }
+
+  $('#exportBtn').addEventListener('click', exportBackup);
+  $('#importBtn').addEventListener('click', () => $('#importFile').click());
+  $('#importFile').addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) { showToast('El archivo es demasiado grande.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => { settingsModal.classList.add('hidden'); importBackup(String(reader.result)); };
+    reader.onerror = () => showToast('No se pudo leer el archivo.');
+    reader.readAsText(file);
+  });
+
+  // ---------- Captura rápida (solo en la app de escritorio) ----------
+  if (window.desktop) {
+    window.desktop.quickShortcut().then(label => {
+      if (!label) return;
+      $('#quickKeys').textContent = label;
+      $('#quickInfo').classList.remove('hidden');
+    }).catch(() => {});
+
+    window.desktop.onQuickAdd(d => {
+      const title = d && typeof d.title === 'string' ? d.title.trim().slice(0, 120) : '';
+      if (!title) return;
+      const category = categories.some(c => c.id === d.category) ? d.category : categories[0].id;
+      const task = {
+        id: uid(), title, desc: '', category, due: '', done: false, createdAt: Date.now(),
+        subtasks: [], completions: [], repeat: null, doneOn: '', reopenOn: ''
+      };
+      tasks.push(task);
+      save();
+      render(true);
+      showToast(`Añadida: ${title}`, () => {
+        tasks = tasks.filter(t => t.id !== task.id);
+        save();
+        render();
+      });
+    });
+  }
+
   // ---------- Botón atrás de Android ----------
   try {
     const AppPlugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
     if (AppPlugin) {
       AppPlugin.addListener('backButton', () => {
-        if (!accModal.classList.contains('hidden')) closeAccount();
+        if (!statsModal.classList.contains('hidden')) statsModal.classList.add('hidden');
+        else if (!settingsModal.classList.contains('hidden')) settingsModal.classList.add('hidden');
+        else if (!accModal.classList.contains('hidden')) closeAccount();
         else if (!catModal.classList.contains('hidden')) closeCatModal();
         else if (!modal.classList.contains('hidden')) closeModal();
         else AppPlugin.exitApp();
@@ -976,6 +1381,7 @@
   } catch {}
 
   // ---------- Inicio ----------
+  renderPrefs();
   if (refreshRecurring()) save();
   render(true);
 

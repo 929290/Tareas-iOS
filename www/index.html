@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#0e1014" />
   <title>Pendientes</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="mobile.css" />
 </head>
@@ -39,6 +40,17 @@
         <div class="bar"><div id="progressBar" class="bar-fill"></div></div>
         <p id="progressText" class="progress-text"></p>
       </div>
+
+      <div class="side-foot">
+        <button id="statsBtn" class="side-link" title="Resumen e historial">
+          <svg viewBox="0 0 24 24"><path d="M6 20V11M12 20V5M18 20v-6M3 20h18"/></svg>
+          Resumen
+        </button>
+        <button id="settingsBtn" class="side-link" title="Ajustes">
+          <svg viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+          Ajustes
+        </button>
+      </div>
     </aside>
 
     <!-- Contenido principal -->
@@ -53,6 +65,13 @@
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
             <input id="searchInput" type="text" placeholder="Buscar..." autocomplete="off" />
           </div>
+          <button id="layoutBtn" class="icon-btn big" title="Cambiar vista" aria-label="Cambiar vista"></button>
+          <button id="statsBtnM" class="icon-btn big m-only" title="Resumen e historial" aria-label="Resumen e historial">
+            <svg viewBox="0 0 24 24"><path d="M6 20V11M12 20V5M18 20v-6M3 20h18"/></svg>
+          </button>
+          <button id="settingsBtnM" class="icon-btn big m-only" title="Ajustes" aria-label="Ajustes">
+            <svg viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+          </button>
           <button id="addBtn" class="btn-primary" aria-label="Nueva tarea">
             <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
             Nueva tarea
@@ -182,6 +201,69 @@
           <button type="button" id="accSync" class="btn-ghost">Sincronizar ahora</button>
           <button type="button" id="accLogout" class="btn-primary btn-danger">Cerrar sesión</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal resumen e historial -->
+  <div id="statsModal" class="backdrop hidden">
+    <div class="modal wide">
+      <div class="modal-head">
+        <h2>Resumen</h2>
+        <div class="tabs compact" id="statsTabs">
+          <button type="button" class="tab active" data-range="7">7 días</button>
+          <button type="button" class="tab" data-range="30">30 días</button>
+        </div>
+      </div>
+      <div id="statTiles" class="stat-tiles"></div>
+      <section class="stats-sec">
+        <h3>Completadas por día</h3>
+        <div id="statsChart" class="chart"></div>
+      </section>
+      <section class="stats-sec">
+        <h3>Por categoría</h3>
+        <div id="statsCats" class="cat-stats"></div>
+      </section>
+      <section class="stats-sec">
+        <h3>Historial</h3>
+        <div id="statsHistory" class="history"></div>
+      </section>
+      <div class="modal-actions">
+        <button type="button" id="statsDone" class="btn-primary">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal ajustes -->
+  <div id="settingsModal" class="backdrop hidden">
+    <div class="modal">
+      <h2>Ajustes</h2>
+      <div class="field">
+        <span>Tema</span>
+        <div id="themeChips" class="chips">
+          <button type="button" class="chip" data-v="system">Como el teléfono</button>
+          <button type="button" class="chip" data-v="light">Claro</button>
+          <button type="button" class="chip" data-v="dark">Oscuro</button>
+        </div>
+      </div>
+      <div class="field">
+        <span>Vista de las tareas</span>
+        <div id="layoutChips" class="chips">
+          <button type="button" class="chip" data-v="cards">Tarjetas</button>
+          <button type="button" class="chip" data-v="list">Lista compacta</button>
+        </div>
+      </div>
+      <div class="field">
+        <span>Copia de seguridad</span>
+        <p class="hint flush">Guarda en un archivo todas tus tareas, categorías e historial, o recupéralas desde uno. Al importar, se mezclan con las que ya tienes (de cada tarea se queda la versión más reciente).</p>
+        <div class="row-btns">
+          <button type="button" id="exportBtn" class="btn-ghost bordered">Exportar copia…</button>
+          <button type="button" id="importBtn" class="btn-ghost bordered">Importar copia…</button>
+          <input id="importFile" type="file" accept=".json,application/json" class="hidden" />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="settingsDone" class="btn-primary">Listo</button>
       </div>
     </div>
   </div>

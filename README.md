@@ -30,10 +30,18 @@ Con una cuenta Apple gratuita la app **caduca a los 7 días**: hay que volver a 
 - **Sale una ❌ roja:** entra en la ejecución, abre el paso que falló y copia las últimas líneas del error.
 - **Compila pero no hay release:** descarga el IPA desde **Artifacts** de la ejecución. Para arreglar la publicación, activa en Settings → Actions → General → Workflow permissions la opción "Read and write permissions".
 
+## Novedades de la versión 1.2
+
+- **Resumen** (icono de gráfica junto al buscador): racha de días, gráfica de completadas por día (toca una barra para ver el detalle), por categoría e historial.
+- **Ajustes** (icono junto al de Resumen): tema claro / oscuro / como el teléfono, vista en lista compacta y copia de seguridad.
+- **Copia de seguridad:** "Exportar copia…" abre el menú Compartir del iPhone (Guardar en Archivos, WhatsApp, correo...). "Importar copia…" abre Archivos para elegir el `.json`.
+- Archivo nuevo que hay que subir: `www/theme.js`. También cambian `www/app.js`, `www/index.html`, `www/styles.css`, `www/mobile.css`, `package.json` y este README.
+- Actualiza la app en todos tus dispositivos: las versiones anteriores mostrarían las tareas borradas que se guardan para el historial.
+
 ## Notas
 
-- Las tareas se guardan en el propio iPhone. No se sincronizan con otros dispositivos.
-- Si desinstalas la app o dejas que caduque sin renovarla, pueden perderse sus datos.
+- Sin cuenta, las tareas se guardan solo en el propio iPhone. Con cuenta (ver abajo) se sincronizan con tus otros dispositivos.
+- Si desinstalas la app o dejas que caduque sin renovarla, pueden perderse los datos que no estén sincronizados. Exporta una copia de vez en cuando.
 
 ## Estructura
 

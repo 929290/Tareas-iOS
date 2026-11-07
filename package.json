@@ -1,12 +1,14 @@
 {
   "name": "pendientes-ios",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Pendientes: app de tareas para iPhone (Capacitor)",
   "dependencies": {
     "@capacitor/app": "^6.0.0",
     "@capacitor/core": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0",
     "@capacitor/ios": "^6.0.0",
+    "@capacitor/share": "^6.0.0",
     "@capacitor/status-bar": "^6.0.0"
   },
   "devDependencies": {
